@@ -1,29 +1,60 @@
-import { Controller, Get, UseGuards, SetMetadata } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 
-// Minimal local stubs to avoid missing-import compile errors.
-// These mirror the shapes used by this controller and can be
-// replaced by the real implementations in auth/ when available.
-class JwtAuthGuard {}
-class RolesGuard {}
+import { PatientService } from './patient.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorator/roles.decorator';
+import { Role } from '../common/enum/role.enum';
 
-// Roles decorator stub: attaches metadata but is otherwise a no-op here.
-const Roles = (role: string) => SetMetadata('roles', role);
+import { CreatePatientProfileDto } from './dto/create-patient-profile.dto';
+import { UpdatePatientProfileDto } from './dto/update-patient-profile.dto';
 
 @Controller('patient')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.PATIENT)
 export class PatientController {
+  constructor(
+    private readonly patientService: PatientService,
+  ) {}
+
+  @Post('profile')
+  createProfile(
+    @Request() req,
+    @Body() dto: CreatePatientProfileDto,
+  ) {
+    return this.patientService.createProfile(
+      req.user.id,
+      dto,
+    );
+  }
 
   @Get('profile')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('PATIENT')
-  getPatientProfile() {
-    return {
-      message: 'Welcome Patient',
-    };
+  getProfile(@Request() req) {
+    return this.patientService.getProfile(
+      req.user.id,
+    );
+  }
+
+  @Patch('profile')
+  updateProfile(
+    @Request() req,
+    @Body() dto: UpdatePatientProfileDto,
+  ) {
+    return this.patientService.updateProfile(
+      req.user.id,
+      dto,
+    );
   }
 
   @Get('dashboard')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('PATIENT')
   getDashboard() {
     return {
       message: 'Patient Dashboard',

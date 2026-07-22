@@ -5,24 +5,24 @@ export enum UserRole {
   PATIENT = 'PATIENT',
 }
 
-@Entity()
+@Entity('users')
 export class User {
   @PrimaryGeneratedColumn()
   id!: number;
 
   @Column()
-  name: string;
+  name!: string;
 
   @Column({ unique: true })
-  email: string;
+  email!: string;
 
   @Column()
-  password: string;
+  password!: string;
 
   @Column({
     type: 'enum',
     enum: UserRole,
     default: UserRole.PATIENT,
   })
-  role: UserRole;
+  role!: UserRole;
 }

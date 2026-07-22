@@ -11,7 +11,9 @@ import { UserModule } from '../user/user.module';
 
 @Module({
   imports: [
-    PassportModule,
+    PassportModule.register({
+  defaultStrategy: 'jwt',
+}),
     UserModule,
     ConfigModule,
 

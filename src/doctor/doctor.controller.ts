@@ -1,30 +1,32 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-
-// Fallback JwtAuthGuard in case the external guard file is missing.
-// This keeps the controller functional without an external dependency.
-const JwtAuthGuard = class {};
-
-// Fallback Roles decorator in case the external decorator file is missing.
-// This keeps the controller functional without an external dependency.
-const Roles = (..._roles: string[]) => {
-  return (_target: any, _key?: any, _descriptor?: any) => {};
-};
+import { Controller, Get, Patch, Post, Body, Request, UseGuards } from '@nestjs/common';
+import { DoctorService } from './doctor.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../common/decorator/roles.decorator';
+import { Role } from '../common/enum/role.enum';
 
 @Controller('doctor')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.DOCTOR)
 export class DoctorController {
+  constructor(private readonly doctorService: DoctorService) {}
+
+  @Post('profile')
+  createProfile(@Request() req, @Body() body: any) {
+    return this.doctorService.createProfile(req.user.id, body);
+  }
 
   @Get('profile')
-  @UseGuards(JwtAuthGuard)
-  @Roles('DOCTOR')
-  getDoctorProfile() {
-    return {
-      message: 'Welcome Doctor',
-    };
+  getProfile(@Request() req) {
+    return this.doctorService.getProfile(req.user.id);
+  }
+
+  @Patch('profile')
+  updateProfile(@Request() req, @Body() body: any) {
+    return this.doctorService.updateProfile(req.user.id, body);
   }
 
   @Get('dashboard')
-  @UseGuards(JwtAuthGuard)
-  @Roles('DOCTOR')
   getDashboard() {
     return {
       message: 'Doctor Dashboard',
