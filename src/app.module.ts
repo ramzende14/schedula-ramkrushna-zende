@@ -6,12 +6,14 @@ import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { DoctorModule } from './doctor/doctor.module';
 import { PatientModule } from './patient/patient.module';
+import { AvailabilityModule } from './availability/availability.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+      
     }),
 
     TypeOrmModule.forRootAsync({
@@ -32,6 +34,7 @@ import { PatientModule } from './patient/patient.module';
     AuthModule,
     DoctorModule,
     PatientModule,
+    AvailabilityModule
   ],
 })
 export class AppModule {}
