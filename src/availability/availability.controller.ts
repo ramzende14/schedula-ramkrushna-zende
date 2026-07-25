@@ -94,4 +94,22 @@ export class AvailabilityController {
       date,
     );
   }
+  @Get(':id/stream-slots')
+generateStreamSlots(
+  @Param('id', ParseIntPipe) id: number,
+) {
+  return this.availabilityService.generateStreamSlots(id);
+}
+
+@Post(':id/book')
+bookWave(
+  @Param('id', ParseIntPipe) id: number,
+) {
+  return this.availabilityService.bookWave(id);
+}@Get(':id/wave')
+getWaveAvailability(
+  @Param('id', ParseIntPipe) id: number,
+) {
+  return this.availabilityService.getWaveAvailability(id);
+}
 }

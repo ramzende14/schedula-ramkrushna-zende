@@ -1,4 +1,13 @@
-import { IsEnum, IsNotEmpty, Matches } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  Matches,
+  IsOptional,
+  IsInt,
+  Min,
+} from 'class-validator';
+
+import { SchedulingType } from '../entity/recurring-availability.entity';
 
 export enum DayOfWeek {
   MONDAY = 'MONDAY',
@@ -21,4 +30,22 @@ export class CreateRecurringDto {
   @IsNotEmpty()
   @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
   endTime!: string;
+
+  @IsEnum(SchedulingType)
+  schedulingType!: SchedulingType;
+
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  slotDuration?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  bufferTime?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxPatients?: number;
 }

@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { RecurringAvailability } from './entity/recurring-availability.entity';
+import { RecurringAvailability, SchedulingType } from './entity/recurring-availability.entity';
 import { CustomAvailability } from './entity/custom-availability.entity';
 import { DoctorProfile } from '../doctor/entity/doctor-profile.entity';
 
@@ -39,6 +39,7 @@ export class AvailabilityService {
 if (!doctor) {
   throw new NotFoundException('Doctor not found');
 }
+
 
 this.validateTimeRange(dto.startTime, dto.endTime);
 
@@ -79,14 +80,53 @@ for (const slot of slots) {
     if (duplicate) {
       throw new ConflictException('Duplicate availability');
     }
-
-    const availability = this.recurringRepo.create({
-      ...dto,
-      doctor,
-    });
-
-    return this.recurringRepo.save(availability);
+    // STREAM validation
+if (dto.schedulingType === SchedulingType.STREAM) {
+  if (!dto.slotDuration) {
+    throw new BadRequestException(
+      'Slot duration is required for STREAM scheduling',
+    );
   }
+
+  if (dto.slotDuration < 5) {
+    throw new BadRequestException(
+      'Slot duration must be at least 5 minutes',
+    );
+  }
+
+  if (dto.bufferTime && dto.bufferTime < 0) {
+    throw new BadRequestException(
+      'Buffer time cannot be negative',
+    );
+  }
+}
+
+// WAVE validation
+if (dto.schedulingType === SchedulingType.WAVE) {
+  if (!dto.maxPatients) {
+    throw new BadRequestException(
+      'Maximum patient capacity is required for WAVE scheduling',
+    );
+  }
+
+  if (dto.maxPatients < 1) {
+    throw new BadRequestException(
+      'Maximum patient capacity must be greater than 0',
+    );
+  }
+}
+
+   const availability = this.recurringRepo.create({
+  ...dto,
+  currentPatients: 0,
+  doctor,
+});
+
+return await this.recurringRepo.save(availability);
+} // <-- createRecurring() 
+
+// Get recurring availability
+
 
   // Get recurring availability
   async getRecurring(userId: number) {
@@ -198,6 +238,22 @@ private isOverlapping(
 ): boolean {
   return start1 < end2 && start2 < end1;
 }
+private toMinutes(time: string): number {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+private toTime(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60)
+    .toString()
+    .padStart(2, '0');
+
+  const minutes = (totalMinutes % 60)
+    .toString()
+    .padStart(2, '0');
+
+  return `${hours}:${minutes}`;
+}
 
   // Get override by date
   async getByDate(userId: number, date: string) {
@@ -224,6 +280,7 @@ private isOverlapping(
   };
 }
 
+
 const dayOfWeek = new Date(date)
   .toLocaleDateString('en-US', {
     weekday: 'long',
@@ -242,6 +299,125 @@ return {
   availability: recurring,
 };
 
-// recurring availability
   }
+
+async generateStreamSlots(id: number) {
+  const availability = await this.recurringRepo.findOne({
+    where: { id },
+  });
+
+  if (!availability) {
+    throw new NotFoundException(
+      'Availability not found',
+    );
+  }
+
+  if (
+    availability.schedulingType !==
+    SchedulingType.STREAM
+  ) {
+    throw new BadRequestException(
+      'This is not a STREAM schedule',
+    );
+  }
+
+  const slots: { startTime: string; endTime: string }[] = [];
+
+  let current = this.toMinutes(
+    availability.startTime,
+  );
+
+  const end = this.toMinutes(
+    availability.endTime,
+  );
+
+  while (
+    current +
+      (availability.slotDuration ?? 0) <=
+    end
+  ) {
+    const slotStart = current;
+
+    const slotEnd =
+      current +
+      (availability.slotDuration ?? 0);
+
+    slots.push({
+      startTime: this.toTime(slotStart),
+      endTime: this.toTime(slotEnd),
+    });
+
+    current =
+      slotEnd +
+      (availability.bufferTime ?? 0);
+  }
+
+  return {
+    schedulingType: "STREAM",
+    totalSlots: slots.length,
+    slots,
+  };
+}
+async getWaveAvailability(id: number) {
+  const availability = await this.recurringRepo.findOne({
+    where: { id },
+  });
+
+  if (!availability) {
+    throw new NotFoundException('Availability not found');
+  }
+
+  if (availability.schedulingType !== SchedulingType.WAVE) {
+    throw new BadRequestException(
+      'This is not a WAVE schedule',
+    );
+  }
+
+  return {
+    schedulingType: 'WAVE',
+    timeWindow: `${availability.startTime} - ${availability.endTime}`,
+    available: `${availability.currentPatients}/${availability.maxPatients}`,
+    remaining:
+      (availability.maxPatients ?? 0) -
+      availability.currentPatients,
+  };
+}async bookWave(id: number) {
+  const availability = await this.recurringRepo.findOne({
+    where: { id },
+  });
+
+  if (!availability) {
+    throw new NotFoundException(
+      'Availability not found',
+    );
+  }
+
+  if (
+    availability.schedulingType !==
+    SchedulingType.WAVE
+  ) {
+    throw new BadRequestException(
+      'This is not a WAVE schedule',
+    );
+  }
+
+  if (
+    availability.currentPatients >=
+    (availability.maxPatients ?? 0)
+  ) {
+    throw new ConflictException('Wave is full');
+  }
+
+  availability.currentPatients++;
+
+  await this.recurringRepo.save(availability);
+
+  return {
+    message: 'Appointment booked successfully',
+    tokenNumber: availability.currentPatients,
+    appointmentWindow: `${availability.startTime} - ${availability.endTime}`,
+  };
+}
+
+// recurring availability
 }

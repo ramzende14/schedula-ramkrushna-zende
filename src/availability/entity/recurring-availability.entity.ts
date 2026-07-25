@@ -9,6 +9,11 @@ import {
 } from 'typeorm';
 import { DoctorProfile } from '../../doctor/entity/doctor-profile.entity';
 
+export enum SchedulingType {
+  STREAM = 'STREAM',
+  WAVE = 'WAVE',
+}
+
 @Entity('recurring_availability')
 export class RecurringAvailability {
   @PrimaryGeneratedColumn()
@@ -26,6 +31,25 @@ export class RecurringAvailability {
 
   @Column({ type: 'time' })
   endTime!: string;
+
+  @Column({
+    type: 'enum',
+    enum: SchedulingType,
+    default: SchedulingType.STREAM,
+  })
+  schedulingType!: SchedulingType;
+
+  @Column({ nullable: true })
+  slotDuration?: number;
+
+  @Column({ default: 0 })
+  bufferTime!: number;
+
+  @Column({ nullable: true })
+  maxPatients?: number;
+
+  @Column({ default: 0 })
+  currentPatients!: number;
 
   @CreateDateColumn()
   createdAt!: Date;
