@@ -1,6 +1,6 @@
 export class SignupDto {
-  name: string;
+  name !: string;
   email!: string;
-  password: string;
-  role: 'DOCTOR' | 'PATIENT';
+  password!: string;
+  role!: 'DOCTOR' | 'PATIENT';
 }

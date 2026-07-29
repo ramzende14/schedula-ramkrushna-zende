@@ -45,15 +45,12 @@ export class RecurringAvailability {
   @Column({ default: 0 })
   bufferTime!: number;
 
-  @Column({ nullable: true })
-  maxPatients?: number;
-
   @Column({ default: 0 })
   currentPatients!: number;
 
   @CreateDateColumn()
   createdAt!: Date;
 
-  @UpdateDateColumn()
-  updatedAt!: Date;
+ @Column({ nullable: true })
+maxPatients?: number;
 }
