@@ -22,12 +22,14 @@ export class DoctorController {
   constructor(private readonly doctorService: DoctorService) {}
 
   @Post('profile')
-  createProfile(
-    @Request() req,
-    @Body() dto: CreateDoctorProfileDto,
-  ) {
-    return this.doctorService.createProfile(req.user.id, dto);
-  }
+createProfile(
+  @Request() req,
+  @Body() dto: CreateDoctorProfileDto,
+) {
+  console.log(req.user);
+
+  return this.doctorService.createProfile(req.user.id, dto);
+}
 
   @Get('profile')
   getProfile(@Request() req) {
