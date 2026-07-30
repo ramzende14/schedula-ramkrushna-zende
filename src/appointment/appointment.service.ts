@@ -491,10 +491,7 @@ while (current + duration <= end) {
   })
 
   .getMany();
-  console.log('Booked Appointments:', booked);
-
-  console.log('Generated Slots:', slots);
-
+  
   // Remove booked slots
   const availableSlots = slots.filter(
   (slot) =>
@@ -520,8 +517,7 @@ while (current + duration <= end) {
     specialization: doctor.specialization,
     consultationFee: doctor.consultationFee,
     date,
-    schedulingType:
-      availability.schedulingType,
+   
     totalAvailableSlots:
       availableSlots.length,
     availableSlots: availableSlots.map((slot) => ({
