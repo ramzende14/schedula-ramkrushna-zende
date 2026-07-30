@@ -28,7 +28,7 @@ import { AppointmentModule } from './appointment/appointment.module';
     database: config.get<string>('DB_NAME'),
 
     autoLoadEntities: true,
-    synchronize: true,
+    synchronize: false,
 
     ssl: {
       rejectUnauthorized: false,
