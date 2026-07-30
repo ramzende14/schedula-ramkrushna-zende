@@ -44,8 +44,4 @@ export class CreateRecurringDto {
   @Min(0)
   bufferTime?: number;
 
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  maxPatients?: number;
 }

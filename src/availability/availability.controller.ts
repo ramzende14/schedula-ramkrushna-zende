@@ -11,14 +11,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-
 import { AvailabilityService } from './availability.service';
-
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorator/roles.decorator';
 import { UserRole } from '../user/user.entity';
-
 import { CreateRecurringDto } from './dto/create-recurring.dto';
 import { UpdateRecurringDto } from './dto/update-recurring.dto';
 import { CreateOverrideDto } from './dto/create-override.dto';
@@ -94,22 +91,10 @@ export class AvailabilityController {
       date,
     );
   }
-  @Get(':id/stream-slots')
-generateStreamSlots(
-  @Param('id', ParseIntPipe) id: number,
+  @Get(':id/slots')
+  generateSlots(
+    @Param('id', ParseIntPipe) id: number,
 ) {
-  return this.availabilityService.generateStreamSlots(id);
-}
-
-@Post(':id/book')
-bookWave(
-  @Param('id', ParseIntPipe) id: number,
-) {
-  return this.availabilityService.bookWave(id);
-}@Get(':id/wave')
-getWaveAvailability(
-  @Param('id', ParseIntPipe) id: number,
-) {
-  return this.availabilityService.getWaveAvailability(id);
+  return this.availabilityService.generateSlots(id);
 }
 }
