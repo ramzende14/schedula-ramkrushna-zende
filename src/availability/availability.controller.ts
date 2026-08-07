@@ -19,6 +19,8 @@ import { UserRole } from '../user/user.entity';
 import { CreateRecurringDto } from './dto/create-recurring.dto';
 import { UpdateRecurringDto } from './dto/update-recurring.dto';
 import { CreateOverrideDto } from './dto/create-override.dto';
+import { ExpandAvailabilityDto } from './dto/expand-availability.dto';
+import { ShrinkAvailabilityDto } from './dto/shrink-availability.dto';
 
 @Controller('doctor/availability')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -26,7 +28,7 @@ import { CreateOverrideDto } from './dto/create-override.dto';
 export class AvailabilityController {
   constructor(
     private readonly availabilityService: AvailabilityService,
-  ) {}
+  ) { }
 
   // Create recurring availability
   @Post()
@@ -94,7 +96,28 @@ export class AvailabilityController {
   @Get(':id/slots')
   generateSlots(
     @Param('id', ParseIntPipe) id: number,
-) {
-  return this.availabilityService.generateSlots(id);
-}
+  ) {
+    return this.availabilityService.generateSlots(id);
+  }
+
+  @Patch('schedule/expand')
+  expandAvailability(
+    @Req() req,
+    @Body() dto: ExpandAvailabilityDto,
+  ) {
+    return this.availabilityService.expandAvailability(
+      req.user.userId,
+      dto,
+    );
+  }
+  @Patch('schedule/shrink')
+  shrinkAvailability(
+    @Req() req,
+    @Body() dto: ShrinkAvailabilityDto,
+  ) {
+    return this.availabilityService.shrinkAvailability(
+      req.user.userId,
+      dto,
+    );
+  }
 }

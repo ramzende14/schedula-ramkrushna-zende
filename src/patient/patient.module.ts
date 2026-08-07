@@ -16,4 +16,4 @@ import { User } from '../user/user.entity';
   controllers: [PatientController],
   providers: [PatientService],
 })
-export class PatientModule {}
+export class PatientModule { }

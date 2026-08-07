@@ -19,17 +19,17 @@ import { UpdateDoctorProfileDto } from './dto/update-doctor-profile.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.DOCTOR)
 export class DoctorController {
-  constructor(private readonly doctorService: DoctorService) {}
+  constructor(private readonly doctorService: DoctorService) { }
 
   @Post('profile')
-createProfile(
-  @Request() req,
-  @Body() dto: CreateDoctorProfileDto,
-) {
-  console.log(req.user);
+  createProfile(
+    @Request() req,
+    @Body() dto: CreateDoctorProfileDto,
+  ) {
+    console.log(req.user);
 
-  return this.doctorService.createProfile(req.user.id, dto);
-}
+    return this.doctorService.createProfile(req.user.id, dto);
+  }
 
   @Get('profile')
   getProfile(@Request() req) {
