@@ -168,3 +168,202 @@ export async function findNearestAvailableAfter(
   const found = schedule.availableSlots.find((s) => toMinutes(s.startTime) >= requested);
   return found ? { date: schedule.date, startTime: found.startTime, endTime: found.endTime } : null;
 }
+
+export async function findNearestSlotBeforeShrink(
+  doctorId: number,
+  date: string,
+  newEndTime: string,
+  shrinkingAvailabilityId: number,
+  recurringRepo: Repository<RecurringAvailability>,
+  customRepo: Repository<CustomAvailability>,
+  appointmentRepo: Repository<Appointment>,
+) {
+  const schedule = await computeDailySchedule(
+    doctorId,
+    date,
+    recurringRepo,
+    customRepo,
+    appointmentRepo,
+  );
+
+  if (!schedule?.availableSlots?.length) {
+    return null;
+  }
+
+  const boundary = toMinutes(newEndTime);
+
+  // Only slots completely inside the NEW reduced availability
+  const validSlots = schedule.availableSlots.filter((slot) => {
+    const start = toMinutes(slot.startTime);
+    const end = toMinutes(slot.endTime);
+
+    return (
+      slot.availabilityId === shrinkingAvailabilityId &&
+      end <= boundary
+    );
+  });
+
+  // Get the latest available slot before shrink boundary
+  const found = validSlots
+    .sort(
+      (a, b) =>
+        toMinutes(b.startTime) - toMinutes(a.startTime),
+    )[0];
+
+  return found
+    ? {
+        date: schedule.date,
+        startTime: found.startTime,
+        endTime: found.endTime,
+      }
+    : null;
+}
+
+export async function findShrinkAlternatives(
+  doctorId: number,
+  date: string,
+  newEndTime: string,
+  shrinkingAvailabilityId: number,
+  recurringRepo: Repository<RecurringAvailability>,
+  customRepo: Repository<CustomAvailability>,
+  appointmentRepo: Repository<Appointment>,
+) {
+  // ============================================================
+  // 1. SAME SESSION - find latest available slot before shrink
+  // ============================================================
+
+  const sameSession = await findNearestSlotBeforeShrink(
+    doctorId,
+    date,
+    newEndTime,
+    shrinkingAvailabilityId,
+    recurringRepo,
+    customRepo,
+    appointmentRepo,
+  );
+
+  if (sameSession) {
+    return {
+      type: 'SAME_SESSION',
+      priority: 1,
+      ...sameSession,
+      reason: 'Earlier available slot in the same consultation session',
+    };
+  }
+
+  // ============================================================
+  // 2. NEXT SESSION - same day
+  // ============================================================
+
+  const day = weekdayFromISODate(date);
+
+  const recurring = await recurringRepo.find({
+    where: {
+      doctor: { id: doctorId },
+      dayOfWeek: day,
+    },
+    order: {
+      startTime: 'ASC',
+    },
+  });
+
+  const shrinking = recurring.find(
+    (r) => r.id === shrinkingAvailabilityId,
+  );
+
+  if (!shrinking) {
+    return null;
+  }
+
+  const shrinkingEnd = toMinutes(shrinking.endTime);
+
+  const nextSession = recurring.find(
+    (r) =>
+      r.id !== shrinkingAvailabilityId &&
+      toMinutes(r.startTime) >= shrinkingEnd,
+  );
+
+  if (nextSession) {
+    const duration =
+      nextSession.slotDuration ??
+      (toMinutes(nextSession.endTime) -
+        toMinutes(nextSession.startTime));
+
+    const buffer = nextSession.bufferTime ?? 0;
+    const step = duration + buffer;
+
+    if (duration > 0 && step > 0) {
+      // Get booked appointments
+      const booked = await appointmentRepo
+        .createQueryBuilder('appointment')
+        .leftJoin('appointment.doctor', 'doctor')
+        .where('doctor.id = :doctorId', { doctorId })
+        .andWhere('appointment.date = :date', { date })
+        .andWhere('appointment.status = :status', {
+          status: AppointmentStatus.BOOKED,
+        })
+        .getMany();
+
+      const bookedCount = new Map<string, number>();
+
+      for (const appointment of booked) {
+        const key = buildSlotKey(
+          appointment.startTime,
+          appointment.endTime,
+        );
+
+        bookedCount.set(
+          key,
+          (bookedCount.get(key) ?? 0) + 1,
+        );
+      }
+
+      let current = toMinutes(nextSession.startTime);
+      const end = toMinutes(nextSession.endTime);
+
+      while (current + duration <= end) {
+        const startTime = toTime(current);
+        const endTime = toTime(current + duration);
+
+        const key = buildSlotKey(startTime, endTime);
+
+        const bookedForSlot =
+          bookedCount.get(key) ?? 0;
+
+        const capacity =
+          nextSession.maxPatients &&
+          nextSession.maxPatients > 0
+            ? nextSession.maxPatients
+            : 1;
+
+        if (bookedForSlot < capacity) {
+          return {
+            type: 'NEXT_SESSION',
+            priority: 2,
+            date,
+            startTime,
+            endTime,
+            reason:
+              'Available slot in the next consultation session',
+          };
+        }
+
+        current += step;
+      }
+    }
+  }
+
+  // ============================================================
+  // 3. NO SAME-DAY SLOT
+  // ============================================================
+
+  return {
+    type: 'RESCHEDULE_OR_CANCEL',
+    priority: 4,
+    date: null,
+    startTime: null,
+    endTime: null,
+    reason:
+      'No suitable alternative slot is available. Patient should reschedule to another date or cancel.',
+  };
+}

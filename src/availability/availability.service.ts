@@ -12,17 +12,15 @@ import { RecurringAvailability, SchedulingType } from './entity/recurring-availa
 import { CustomAvailability } from './entity/custom-availability.entity';
 import { DoctorProfile } from '../doctor/entity/doctor-profile.entity';
 import { Appointment, AppointmentStatus } from '../appointment/entity/appointment.entity';
-import { computeDailySchedule } from './scheduling.engine';
+import { computeDailySchedule, findNearestSlotBeforeShrink, findShrinkAlternatives } from './scheduling.engine';
 
 import { CreateRecurringDto } from './dto/create-recurring.dto';
 import { UpdateRecurringDto } from './dto/update-recurring.dto';
 import { CreateOverrideDto } from './dto/create-override.dto';
 import { ExpandAvailabilityDto } from './dto/expand-availability.dto';
 import { ShrinkAvailabilityDto } from './dto/shrink-availability.dto';
-import {
 
-  findNearestAvailableAfter
-} from './scheduling.engine';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class AvailabilityService {
@@ -37,6 +35,7 @@ export class AvailabilityService {
     private doctorRepo: Repository<DoctorProfile>,
     @InjectRepository(Appointment)
     private appointmentRepo: Repository<Appointment>,
+    private readonly notificationService: NotificationService,
   ) { }
 
   // Create recurring availability
@@ -528,9 +527,10 @@ export class AvailabilityService {
         },
 
         relations: [
-          'patient',
-          'doctor'
-        ]
+  'patient',
+  'patient.user',
+  'doctor',
+]
 
       });
     const affectedAppointments = bookedAppointments.filter(
@@ -540,83 +540,86 @@ export class AvailabilityService {
 );
 
     // 7. Suggest nearest slot
-    const suggestions: Array<{
-      appointmentId: number;
-      patient: string;
-      oldSlot: { start: string; end: string };
-      suggestedSlot: any;
-    }> = [];
+   const suggestions: Array<{
+  appointmentId: number;
+  patient: string;
+  oldSlot: {
+    start: string;
+    end: string;
+  };
+  suggestedSlot: any;
+}> = [];
 
-    for (const appt of affectedAppointments) {
+for (const appt of affectedAppointments) {
 
-      const nearest =
+  const alternative = await findShrinkAlternatives(
+    doctor.id,
+    dto.date,
+    dto.newEndTime,
+    recurring.id,
+    this.recurringRepo,
+    this.customRepo,
+    this.appointmentRepo,
+  );
 
-        await findNearestAvailableAfter(
+  suggestions.push({
+    appointmentId: appt.id,
+    patient: appt.patient.fullName,
 
-          doctor.id,
+    oldSlot: {
+      start: appt.startTime,
+      end: appt.endTime,
+    },
 
-          dto.date,
+    suggestedSlot: alternative,
+  });
 
-          appt.endTime,
+  if (appt.patient?.user?.email) {
+    await this.notificationService.sendShrinkEmail({
+      patientEmail: appt.patient.user.email,
+      patientName: appt.patient.fullName,
+      doctorName: doctor.fullName,
 
-          this.recurringRepo,
+      oldDate: dto.date,
+      oldStartTime: appt.startTime,
+      oldEndTime: appt.endTime,
 
-          this.customRepo,
-
-          this.appointmentRepo
-
-        );
-
-      suggestions.push({
-
-        appointmentId: appt.id,
-
-        patient: appt.patient.fullName,
-
-        oldSlot: {
-
-          start: appt.startTime,
-
-          end: appt.endTime
-
-        },
-
-        suggestedSlot: nearest
-
-      });
-
-    }
-
-
-    // 8. Return preview
-    return {
-
-      message: "Shrink preview",
-
-      currentAvailability: {
-
-        startTime: recurring.startTime,
-
-        endTime: recurring.endTime
-
-      },
-
-      newAvailability: {
-
-        startTime: recurring.startTime,
-
-        endTime: dto.newEndTime
-
-      },
-
-      affectedSlots,
-
-      affectedAppointments: suggestions,
-
-      totalAffected: suggestions.length
-
-    };
+      suggestedDate: alternative?.date ?? null,
+      suggestedStartTime: alternative?.startTime ?? null,
+      suggestedEndTime: alternative?.endTime ?? null,
+    });
   }
+}
+// 8. Persist the shrink
+const previousEndTime = recurring.endTime;
+
+recurring.endTime = dto.newEndTime;
+
+await this.recurringRepo.save(recurring);
+return {
+  message: 'Availability shrink processed successfully',
+
+  date: dto.date,
+
+ previousEndTime: previousEndTime,
+newEndTime: recurring.endTime,
+
+  schedulingType: recurring.schedulingType,
+
+  maxPatients: recurring.maxPatients,
+
+  affectedSlots: affectedSlots.length,
+
+  affectedAppointments: affectedAppointments.length,
+
+  suggestions,
+
+  emailNotificationsSent: affectedAppointments.filter(
+    appt => !!appt.patient?.user?.email
+  ).length,
+};
+  }
+
 
 
 
