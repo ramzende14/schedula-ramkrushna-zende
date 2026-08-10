@@ -51,6 +51,6 @@ export class RecurringAvailability {
   @CreateDateColumn()
   createdAt!: Date;
 
- @Column({ nullable: true })
-maxPatients?: number;
+  @Column({ nullable: true })
+  maxPatients?: number;
 }

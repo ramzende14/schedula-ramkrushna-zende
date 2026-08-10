@@ -14,34 +14,32 @@ import { AppointmentModule } from './appointment/appointment.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      
+
     }),
 
     TypeOrmModule.forRootAsync({
-  inject: [ConfigService],
-  useFactory: (config: ConfigService) => ({
-    type: 'postgres',
-    host: config.get<string>('DB_HOST'),
-    port: Number(config.get('DB_PORT')),
-    username: config.get<string>('DB_USERNAME'),
-    password: config.get<string>('DB_PASSWORD'),
-    database: config.get<string>('DB_NAME'),
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        type: 'postgres',
+        host: config.get<string>('DB_HOST'),
+        port: Number(config.get('DB_PORT')),
+        username: config.get<string>('DB_USERNAME'),
+        password: config.get<string>('DB_PASSWORD'),
+        database: config.get<string>('DB_NAME'),
 
-    autoLoadEntities: true,
-    synchronize: false,
+        autoLoadEntities: true,
+        synchronize: false,
 
-    ssl: {
-      rejectUnauthorized: false,
-    },
-  }),
-}),
+
+      }),
+    }),
 
     UserModule,
     AuthModule,
     DoctorModule,
     PatientModule,
     AvailabilityModule,
-    AppointmentModule, 
+    AppointmentModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

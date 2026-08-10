@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { DoctorProfile } from '../../doctor/entity/doctor-profile.entity';
+import { SchedulingType } from './recurring-availability.entity';
 
 @Entity('custom_availability')
 export class CustomAvailability {
@@ -26,6 +27,23 @@ export class CustomAvailability {
 
   @Column({ type: 'time' })
   endTime!: string;
+
+  @Column({
+    type: 'enum',
+    enum: SchedulingType,
+    nullable: true,
+    default: null,
+  })
+  schedulingType?: SchedulingType | null;
+
+  @Column({ type: 'int', nullable: true })
+  slotDuration?: number | null;
+
+  @Column({ type: 'int', nullable: true, default: 0 })
+  bufferTime?: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  maxPatients?: number | null;
 
   @CreateDateColumn()
   createdAt!: Date;

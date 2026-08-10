@@ -23,7 +23,7 @@ import { UpdatePatientProfileDto } from './dto/update-patient-profile.dto';
 export class PatientController {
   constructor(
     private readonly patientService: PatientService,
-  ) {}
+  ) { }
 
   @Post('profile')
   createProfile(

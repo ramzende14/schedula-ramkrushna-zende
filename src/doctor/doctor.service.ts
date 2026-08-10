@@ -19,7 +19,7 @@ export class DoctorService {
 
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-  ) {}
+  ) { }
 
   async createProfile(
     userId: number,
