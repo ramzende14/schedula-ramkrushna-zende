@@ -8,6 +8,7 @@ import { PatientProfile } from './patient/entity/patient-profile.entity';
 import { RecurringAvailability } from './availability/entity/recurring-availability.entity';
 import { CustomAvailability } from './availability/entity/custom-availability.entity';
 import { Appointment } from './appointment/entity/appointment.entity';
+import { Notification } from './notification/notification.entity';
 
 export default new DataSource({
   type: 'postgres',
@@ -26,6 +27,7 @@ export default new DataSource({
     RecurringAvailability,
     CustomAvailability,
     Appointment,
+    Notification,
     
   ],
 
