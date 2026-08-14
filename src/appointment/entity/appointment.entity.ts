@@ -14,6 +14,7 @@ import { PatientProfile } from '../../patient/entity/patient-profile.entity';
 export enum AppointmentStatus {
   BOOKED = 'BOOKED',
   CANCELLED = 'CANCELLED',
+  COMPLETED = 'COMPLETED',
 }
 
 @Entity('appointments')
@@ -49,6 +50,12 @@ export class Appointment {
   endTime!: string;
 
   @Column({
+    type: 'int',
+    name: 'availability_id',
+  })
+  availabilityId!: number;
+
+  @Column({
     type: 'enum',
     enum: AppointmentStatus,
     default: AppointmentStatus.BOOKED,
@@ -60,4 +67,6 @@ export class Appointment {
 
   @UpdateDateColumn()
   updatedAt!: Date;
+
+  
 }

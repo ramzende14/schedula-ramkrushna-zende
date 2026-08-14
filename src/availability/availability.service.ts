@@ -9,7 +9,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { RecurringAvailability, SchedulingType } from './entity/recurring-availability.entity';
-import { CustomAvailability } from './entity/custom-availability.entity';
+import {
+  CustomAvailability,
+  CustomAvailabilityType,
+} from './entity/custom-availability.entity';
 import { DoctorProfile } from '../doctor/entity/doctor-profile.entity';
 import { Appointment, AppointmentStatus } from '../appointment/entity/appointment.entity';
 import { computeDailySchedule, findNearestSlotBeforeShrink, findShrinkAlternatives } from './scheduling.engine';
@@ -122,7 +125,7 @@ export class AvailabilityService {
 
     const availability = this.recurringRepo.create({
       ...dto,
-      currentPatients: 0,
+
       doctor,
     });
 
@@ -293,7 +296,9 @@ export class AvailabilityService {
     const recurring = await this.recurringRepo.find({
       where: {
         doctor: { id: doctor.id },
-        dayOfWeek: dayOfWeek,
+        // TypeORM FindOptionsWhere expects DayOfWeek enum or FindOperator
+        // Cast to any to satisfy TS when dayOfWeek is a string
+        dayOfWeek: dayOfWeek as any,
       },
     });
 
@@ -401,10 +406,10 @@ export class AvailabilityService {
 
     const recurring = await this.recurringRepo.findOne({
       where: {
+        id: dto.availabilityId,
         doctor: { id: doctor.id },
-        dayOfWeek,
       },
-    });
+    });;
 
     if (!recurring) {
       throw new BadRequestException('Recurring availability not found for this day');
@@ -427,18 +432,43 @@ export class AvailabilityService {
     if (duplicate) {
       throw new ConflictException('Availability already expanded for this time slot');
     }
+    const newStartTime = recurring.endTime;
+    const newEndTime = dto.newEndTime;
+
+    const customWindows = await this.customRepo.find({
+      where: {
+        doctor: { id: doctor.id },
+        date: dto.date,
+      },
+    });
+
+    for (const custom of customWindows) {
+      if (
+        this.isOverlapping(
+          newStartTime,
+          newEndTime,
+          custom.startTime,
+          custom.endTime,
+        )
+      ) {
+        throw new ConflictException(
+          'Expanded availability overlaps with existing availability',
+        );
+      }
+    }
 
     // Create custom availability for the expanded time
-    const customAvailability = this.customRepo.create({
-      doctor,
-      date: dto.date,
-      startTime: recurring.endTime,
-      endTime: dto.newEndTime,
-      schedulingType: recurring.schedulingType,
-      slotDuration: recurring.slotDuration,
-      bufferTime: recurring.bufferTime,
-      maxPatients: recurring.maxPatients,
-    });
+  const customAvailability = this.customRepo.create({
+  doctor,
+  date: dto.date,
+  startTime: recurring.endTime,
+  endTime: dto.newEndTime,
+  schedulingType: recurring.schedulingType,
+  slotDuration: recurring.slotDuration,
+  bufferTime: recurring.bufferTime,
+  maxPatients: recurring.maxPatients,
+  type: CustomAvailabilityType.ADD,
+});
 
     await this.customRepo.save(customAvailability);
 
@@ -450,6 +480,7 @@ export class AvailabilityService {
       this.customRepo,
       this.appointmentRepo,
     );
+
 
     return {
       message: 'Availability expanded successfully',
@@ -480,13 +511,12 @@ export class AvailabilityService {
       })
       .toUpperCase();
 
-    const recurring =
-      await this.recurringRepo.findOne({
-        where: {
-          doctor: { id: doctor.id },
-          dayOfWeek
-        }
-      });
+    const recurring = await this.recurringRepo.findOne({
+      where: {
+        id: dto.availabilityId,
+        doctor: { id: doctor.id },
+      },
+    });
 
     if (!recurring) {
       throw new NotFoundException("Recurring availability not found");
@@ -510,11 +540,13 @@ export class AvailabilityService {
       );
 
     // 5. Find affected slots
-   const affectedSlots = schedule.availableSlots.filter(
-  slot =>
-    this.toMinutes(slot.startTime) >=
-    this.toMinutes(dto.newEndTime),
-);
+    const newEnd = this.toMinutes(dto.newEndTime);
+
+    const affectedSlots = schedule.availableSlots.filter(
+      slot =>
+        slot.availabilityId === recurring.id &&
+        this.toMinutes(slot.startTime) >= newEnd,
+    );
 
     // 6. Find booked appointments
     const bookedAppointments =
@@ -527,97 +559,127 @@ export class AvailabilityService {
         },
 
         relations: [
-  'patient',
-  'patient.user',
-  'doctor',
-]
+          'patient',
+          'patient.user',
+          'doctor',
+        ]
 
       });
+    const recurringEnd = this.toMinutes(recurring.endTime);
+
     const affectedAppointments = bookedAppointments.filter(
-  appt =>
-    this.toMinutes(appt.endTime) >
-    this.toMinutes(dto.newEndTime),
-);
+      appt =>
+        appt.availabilityId === recurring.id &&
+        this.toMinutes(appt.startTime) < recurringEnd &&
+        this.toMinutes(appt.endTime) > newEnd,
+    );
 
     // 7. Suggest nearest slot
-   const suggestions: Array<{
-  appointmentId: number;
-  patient: string;
-  oldSlot: {
-    start: string;
-    end: string;
-  };
-  suggestedSlot: any;
-}> = [];
+    const suggestions: Array<{
+      appointmentId: number;
+      patient: string;
+      oldSlot: {
+        start: string;
+        end: string;
+      };
+      suggestedSlot: any;
+    }> = [];
 
-for (const appt of affectedAppointments) {
+    for (const appt of affectedAppointments) {
 
-  const alternative = await findShrinkAlternatives(
-    doctor.id,
-    dto.date,
-    dto.newEndTime,
-    recurring.id,
-    this.recurringRepo,
-    this.customRepo,
-    this.appointmentRepo,
-  );
+      const alternative = await findShrinkAlternatives(
+        doctor.id,
+        dto.date,
+        dto.newEndTime,
+        recurring.id,
+        this.recurringRepo,
+        this.customRepo,
+        this.appointmentRepo,
+      );
 
-  suggestions.push({
-    appointmentId: appt.id,
-    patient: appt.patient.fullName,
+      suggestions.push({
+        appointmentId: appt.id,
+        patient: appt.patient.fullName,
 
-    oldSlot: {
-      start: appt.startTime,
-      end: appt.endTime,
-    },
+        oldSlot: {
+          start: appt.startTime,
+          end: appt.endTime,
+        },
 
-    suggestedSlot: alternative,
-  });
+        suggestedSlot: alternative,
+      });
 
-  if (appt.patient?.user?.email) {
-    await this.notificationService.sendShrinkEmail({
-      patientEmail: appt.patient.user.email,
-      patientName: appt.patient.fullName,
-      doctorName: doctor.fullName,
+      if (appt.patient?.user?.email) {
+        await this.notificationService.sendShrinkEmail({
+          patientEmail: appt.patient.user.email,
+          patientName: appt.patient.fullName,
+          doctorName: doctor.fullName,
 
-      oldDate: dto.date,
-      oldStartTime: appt.startTime,
-      oldEndTime: appt.endTime,
+          oldDate: dto.date,
+          oldStartTime: appt.startTime,
+          oldEndTime: appt.endTime,
 
-      suggestedDate: alternative?.date ?? null,
-      suggestedStartTime: alternative?.startTime ?? null,
-      suggestedEndTime: alternative?.endTime ?? null,
+          suggestedDate: alternative?.date ?? null,
+          suggestedStartTime: alternative?.startTime ?? null,
+          suggestedEndTime: alternative?.endTime ?? null,
+        });
+      }
+    }
+    // 8. Persist the shrink
+    // 8. Persist date-specific shrink
+    const previousEndTime = recurring.endTime;
+
+    const existingShrink = await this.customRepo.findOne({
+      where: {
+        doctor: { id: doctor.id },
+        date: dto.date,
+        recurringAvailability: { id: recurring.id },
+        type: CustomAvailabilityType.SHRINK,
+      },
     });
-  }
-}
-// 8. Persist the shrink
-const previousEndTime = recurring.endTime;
 
-recurring.endTime = dto.newEndTime;
+    if (existingShrink) {
+      existingShrink.endTime = dto.newEndTime;
 
-await this.recurringRepo.save(recurring);
-return {
-  message: 'Availability shrink processed successfully',
+      await this.customRepo.save(existingShrink);
+    } else {
+      const shrinkAvailability = this.customRepo.create({
+        doctor,
+        recurringAvailability: recurring,
+        date: dto.date,
+        startTime: recurring.startTime,
+        endTime: dto.newEndTime,
+        schedulingType: recurring.schedulingType,
+        slotDuration: recurring.slotDuration,
+        bufferTime: recurring.bufferTime,
+        maxPatients: recurring.maxPatients,
+        type: CustomAvailabilityType.SHRINK,
+      });
 
-  date: dto.date,
+      await this.customRepo.save(shrinkAvailability);
+    }
+    return {
+      message: 'Availability shrink processed successfully',
 
- previousEndTime: previousEndTime,
-newEndTime: recurring.endTime,
+      date: dto.date,
 
-  schedulingType: recurring.schedulingType,
+      previousEndTime: previousEndTime,
+      newEndTime: dto.newEndTime,
 
-  maxPatients: recurring.maxPatients,
+      schedulingType: recurring.schedulingType,
 
-  affectedSlots: affectedSlots.length,
+      maxPatients: recurring.maxPatients,
 
-  affectedAppointments: affectedAppointments.length,
+      affectedSlots: affectedSlots.length,
 
-  suggestions,
+      affectedAppointments: affectedAppointments.length,
 
-  emailNotificationsSent: affectedAppointments.filter(
-    appt => !!appt.patient?.user?.email
-  ).length,
-};
+      suggestions,
+
+      emailNotificationsSent: affectedAppointments.filter(
+        appt => !!appt.patient?.user?.email
+      ).length,
+    };
   }
 
 

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { DayOfWeek } from '../availability/enum/day-of-week.enum';
 
 import {
   Appointment,
@@ -154,21 +155,22 @@ export class AppointmentService {
       }
 
       const newAppt = qr.manager.create(Appointment, {
-  doctor: doctorLocked,
-  patient,
-  date: dto.date,
-  startTime: dto.startTime,
-  endTime: dto.endTime,
-  status: AppointmentStatus.BOOKED,
-});
+        doctor: doctorLocked,
+        patient,
+        date: dto.date,
+        startTime: dto.startTime,
+        endTime: dto.endTime,
+        availabilityId: chosen.availabilityId!,
+        status: AppointmentStatus.BOOKED,
+      });
 
-const savedAppointment =
-  await qr.manager.save(newAppt);
+      const savedAppointment =
+        await qr.manager.save(Appointment, newAppt);
 
-return {
-  appointment: savedAppointment,
-  doctorName: doctorLocked.fullName,
-};
+      return {
+        appointment: savedAppointment,
+        doctorName: doctorLocked.fullName,
+      };
     });
     // Send booking email AFTER transaction succeeds
     try {
@@ -187,24 +189,24 @@ return {
       );
     }
     try {
-  await this.notificationService.createAppointmentNotification({
-    patient,
-    appointment: appointmentResult.appointment,
-    type: NotificationType.APPOINTMENT_BOOKED,
-    title: 'Appointment Booked',
-    message: `Your appointment with ${appointmentResult.doctorName} has been booked successfully for ${appointmentResult.appointment.date} at ${appointmentResult.appointment.startTime}.`,
-    eventKey: `appointment-${appointmentResult.appointment.id}-booked`,
-  });
-} catch (error) {
-  console.error(
-    '❌ Booking notification creation failed:',
-    error,
-  );
-}
+      await this.notificationService.createAppointmentNotification({
+        patient,
+        appointment: appointmentResult.appointment,
+        type: NotificationType.APPOINTMENT_BOOKED,
+        title: 'Appointment Booked',
+        message: `Your appointment with ${appointmentResult.doctorName} has been booked successfully for ${appointmentResult.appointment.date} at ${appointmentResult.appointment.startTime}.`,
+        eventKey: `appointment-${appointmentResult.appointment.id}-booked`,
+      });
+    } catch (error) {
+      console.error(
+        '❌ Booking notification creation failed:',
+        error,
+      );
+    }
 
 
 
-  return appointmentResult.appointment;
+    return appointmentResult.appointment;
 
 
   }
@@ -277,203 +279,203 @@ return {
     return appointments;
   }
 
- async cancelAppointment(
-  userId: number,
-  appointmentId: number,
-) {
-  const result = await this.withTransaction(async (qr) => {
+  async cancelAppointment(
+    userId: number,
+    appointmentId: number,
+  ) {
+    const result = await this.withTransaction(async (qr) => {
 
-    // Lock appointment row
-    const locked = await qr.manager
-      .createQueryBuilder(Appointment, 'appointment')
-      .setLock('pessimistic_write')
-      .where('appointment.id = :id', {
-        id: appointmentId,
-      })
-      .getOne();
-
-    if (!locked) {
-      throw new NotFoundException(
-        'Appointment not found',
-      );
-    }
-
-    // Load relations
-    const appt = await qr.manager.findOne(
-      Appointment,
-      {
-        where: {
-          id: locked.id,
-        },
-        relations: [
-          'patient',
-          'patient.user',
-          'doctor',
-        ],
-      },
-    );
-
-    if (!appt) {
-      throw new NotFoundException(
-        'Appointment not found',
-      );
-    }
-
-    // Owner validation
-    if (
-      !appt.patient ||
-      !appt.patient.user ||
-      Number(appt.patient.user.id) !== Number(userId)
-    ) {
-      throw new ConflictException(
-        'You cannot cancel this appointment',
-      );
-    }
-
-    // Already cancelled
-    if (
-      appt.status === AppointmentStatus.CANCELLED
-    ) {
-      throw new ConflictException(
-        'Appointment already cancelled',
-      );
-    }
-
-    // Past appointment
-    const appointmentDateTime =
-      new Date(
-        `${appt.date}T${appt.startTime}`,
-      );
-
-    if (appointmentDateTime < new Date()) {
-      throw new BadRequestException(
-        'Past appointments cannot be cancelled',
-      );
-    }
-
-    // 30-minute cutoff
-    this.validate30MinuteCutoff(
-      appointmentDateTime,
-    );
-
-    // Find containing recurring availability
-    const day =
-      new Date(appt.date)
-        .toLocaleDateString(
-          'en-US',
-          { weekday: 'long' },
-        )
-        .toUpperCase();
-
-    const containing =
-      await qr.manager
-        .createQueryBuilder(
-          RecurringAvailability,
-          'avail',
-        )
+      // Lock appointment row
+      const locked = await qr.manager
+        .createQueryBuilder(Appointment, 'appointment')
         .setLock('pessimistic_write')
-        .where(
-          'avail.doctor_id = :doctorId',
-          {
-            doctorId: appt.doctor.id,
-          },
-        )
-        .andWhere(
-          'avail.dayOfWeek = :day',
-          { day },
-        )
-        .andWhere(
-          'avail.startTime <= :startTime',
-          {
-            startTime: appt.startTime,
-          },
-        )
-        .andWhere(
-          'avail.endTime >= :endTime',
-          {
-            endTime: appt.endTime,
-          },
-        )
+        .where('appointment.id = :id', {
+          id: appointmentId,
+        })
         .getOne();
 
-    // Release Wave seat
-    if (
-      containing &&
-      containing.schedulingType ===
-        SchedulingType.WAVE
-    ) {
-      containing.currentPatients =
-        Math.max(
-          0,
-          (containing.currentPatients ?? 1) - 1,
+      if (!locked) {
+        throw new NotFoundException(
+          'Appointment not found',
+        );
+      }
+
+      // Load relations
+      const appt = await qr.manager.findOne(
+        Appointment,
+        {
+          where: {
+            id: locked.id,
+          },
+          relations: [
+            'patient',
+            'patient.user',
+            'doctor',
+          ],
+        },
+      );
+
+      if (!appt) {
+        throw new NotFoundException(
+          'Appointment not found',
+        );
+      }
+
+      // Owner validation
+      if (
+        !appt.patient ||
+        !appt.patient.user ||
+        Number(appt.patient.user.id) !== Number(userId)
+      ) {
+        throw new ConflictException(
+          'You cannot cancel this appointment',
+        );
+      }
+
+      // Already cancelled
+      if (
+        appt.status === AppointmentStatus.CANCELLED
+      ) {
+        throw new ConflictException(
+          'Appointment already cancelled',
+        );
+      }
+
+      // Past appointment
+      const appointmentDateTime =
+        new Date(
+          `${appt.date}T${appt.startTime}`,
         );
 
-      await qr.manager.save(containing);
-    }
+      if (appointmentDateTime < new Date()) {
+        throw new BadRequestException(
+          'Past appointments cannot be cancelled',
+        );
+      }
 
-    // Cancel appointment
-    appt.status =
-      AppointmentStatus.CANCELLED;
+      // 30-minute cutoff
+      this.validate30MinuteCutoff(
+        appointmentDateTime,
+      );
 
-    await qr.manager.save(appt);
+      // Find containing recurring availability
+      const day =
+        new Date(appt.date)
+          .toLocaleDateString(
+            'en-US',
+            { weekday: 'long' },
+          )
+          .toUpperCase();
 
-    return {
-      appointment: appt,
-      patientEmail: appt.patient.user.email,
-      patientName: appt.patient.fullName,
-      doctorName: appt.doctor.fullName,
-      date: appt.date,
-      startTime: appt.startTime,
-      endTime: appt.endTime,
-    };
-  });
+      const containing =
+        await qr.manager
+          .createQueryBuilder(
+            RecurringAvailability,
+            'avail',
+          )
+          .setLock('pessimistic_write')
+          .where(
+            'avail.doctor_id = :doctorId',
+            {
+              doctorId: appt.doctor.id,
+            },
+          )
+          .andWhere(
+            'avail.dayOfWeek = :day',
+            { day },
+          )
+          .andWhere(
+            'avail.startTime <= :startTime',
+            {
+              startTime: appt.startTime,
+            },
+          )
+          .andWhere(
+            'avail.endTime >= :endTime',
+            {
+              endTime: appt.endTime,
+            },
+          )
+          .getOne();
 
-  // =========================================
-  // SEND EMAIL AFTER TRANSACTION SUCCESS
-  // =========================================
+      // Release Wave seat
+      if (
+        containing &&
+        containing.schedulingType ===
+        SchedulingType.WAVE
+      ) {
+        containing.currentPatients =
+          Math.max(
+            0,
+            (containing.currentPatients ?? 1) - 1,
+          );
 
-  try {
-    await this.notificationService.sendCancellationEmail({
-      patientEmail: result.patientEmail,
-      patientName: result.patientName,
-      doctorName: result.doctorName,
-      date: result.date,
-      startTime: result.startTime,
-      endTime: result.endTime,
+        await qr.manager.save(containing);
+      }
+
+      // Cancel appointment
+      appt.status =
+        AppointmentStatus.CANCELLED;
+
+      await qr.manager.save(appt);
+
+      return {
+        appointment: appt,
+        patientEmail: appt.patient.user.email,
+        patientName: appt.patient.fullName,
+        doctorName: appt.doctor.fullName,
+        date: appt.date,
+        startTime: appt.startTime,
+        endTime: appt.endTime,
+      };
     });
 
-    console.log(
-      '✅ Cancellation email sent successfully',
-    );
-  } catch (error) {
-    console.error(
-      '❌ Cancellation email failed, but appointment was cancelled:',
-      error,
-    );
+    // =========================================
+    // SEND EMAIL AFTER TRANSACTION SUCCESS
+    // =========================================
+
+    try {
+      await this.notificationService.sendCancellationEmail({
+        patientEmail: result.patientEmail,
+        patientName: result.patientName,
+        doctorName: result.doctorName,
+        date: result.date,
+        startTime: result.startTime,
+        endTime: result.endTime,
+      });
+
+      console.log(
+        '✅ Cancellation email sent successfully',
+      );
+    } catch (error) {
+      console.error(
+        '❌ Cancellation email failed, but appointment was cancelled:',
+        error,
+      );
+    }
+    try {
+      await this.notificationService.createAppointmentNotification({
+        patient: result.appointment?.patient,
+        appointment: result.appointment,
+        type: NotificationType.APPOINTMENT_CANCELLED,
+        title: 'Appointment Cancelled',
+        message: `Your appointment with ${result.doctorName} scheduled on ${result.date} at ${result.startTime} has been cancelled.`,
+        eventKey: `appointment-${result.appointment.id}-cancelled`,
+      });
+
+      console.log('✅ Cancellation notification created successfully');
+    } catch (error) {
+      console.error(
+        '❌ Cancellation notification creation failed:',
+        error,
+      );
+    }
+
+    return {
+      message: 'Appointment cancelled successfully',
+      appointment: result.appointment,
+    };
   }
-  try {
-  await this.notificationService.createAppointmentNotification({
-    patient: result.appointment?.patient,
-    appointment: result.appointment,
-    type: NotificationType.APPOINTMENT_CANCELLED,
-    title: 'Appointment Cancelled',
-    message: `Your appointment with ${result.doctorName} scheduled on ${result.date} at ${result.startTime} has been cancelled.`,
-    eventKey: `appointment-${result.appointment.id}-cancelled`,
-  });
-
-  console.log('✅ Cancellation notification created successfully');
-} catch (error) {
-  console.error(
-    '❌ Cancellation notification creation failed:',
-    error,
-  );
-}
-
-  return {
-    message: 'Appointment cancelled successfully',
-    appointment: result.appointment,
-  };
-}
 
   async getAvailableSlots(doctorId: number, date: string) {
     // Find doctor
@@ -520,555 +522,537 @@ return {
   }
 
   async rescheduleAppointment(
-  userId: number,
-  appointmentId: number,
-  dto: RescheduleAppointmentDto,
-) {
-  const result = await this.withTransaction(
-    async (qr) => {
+    userId: number,
+    appointmentId: number,
+    dto: RescheduleAppointmentDto,
+  ) {
+    const result = await this.withTransaction(
+      async (qr) => {
 
-      // =========================================
-      // LOCK APPOINTMENT
-      // =========================================
+        // =========================================
+        // LOCK APPOINTMENT
+        // =========================================
 
-      const locked = await qr.manager
-        .createQueryBuilder(
-          Appointment,
-          'appointment',
-        )
-        .setLock('pessimistic_write')
-        .where(
-          'appointment.id = :id',
-          { id: appointmentId },
-        )
-        .getOne();
-
-      if (!locked) {
-        throw new NotFoundException(
-          'Appointment not found',
-        );
-      }
-
-      // Load relations
-      const appt =
-        await qr.manager.findOne(
-          Appointment,
-          {
-            where: {
-              id: locked.id,
-            },
-            relations: [
-              'patient',
-              'patient.user',
-              'doctor',
-            ],
-          },
-        );
-
-      if (!appt) {
-        throw new NotFoundException(
-          'Appointment not found',
-        );
-      }
-
-      // =========================================
-      // VALIDATION
-      // =========================================
-
-      if (
-        !appt.patient?.user ||
-        Number(appt.patient.user.id) !==
-          Number(userId)
-      ) {
-        throw new BadRequestException(
-          'You can only reschedule your own appointment',
-        );
-      }
-
-      if (
-        appt.status ===
-        AppointmentStatus.CANCELLED
-      ) {
-        throw new BadRequestException(
-          'Cancelled appointment cannot be rescheduled',
-        );
-      }
-
-      const appointmentDateTime =
-        new Date(
-          `${appt.date}T${appt.startTime}:00`,
-        );
-
-      if (
-        appointmentDateTime.getTime() <
-        Date.now()
-      ) {
-        throw new BadRequestException(
-          'Past appointments cannot be rescheduled',
-        );
-      }
-
-      this.validate30MinuteCutoff(
-        appointmentDateTime,
-      );
-
-      if (
-        appt.date === dto.date &&
-        appt.startTime === dto.startTime &&
-        appt.endTime === dto.endTime
-      ) {
-        throw new BadRequestException(
-          'Cannot reschedule to the same slot',
-        );
-      }
-
-      // =========================================
-      // SAVE OLD DETAILS FOR EMAIL
-      // =========================================
-
-      const oldDate = appt.date;
-      const oldStartTime = appt.startTime;
-      const oldEndTime = appt.endTime;
-
-      // =========================================
-      // NEW DATE VALIDATION
-      // =========================================
-
-      const requestedDateTime =
-        new Date(
-          `${dto.date}T${dto.startTime}:00`,
-        );
-
-      if (
-        requestedDateTime.getTime() <=
-        Date.now()
-      ) {
-        throw new BadRequestException(
-          'Requested slot must be in the future',
-        );
-      }
-
-      // =========================================
-      // DOCTOR
-      // =========================================
-
-      const doctorLocked =
-        await qr.manager.findOne(
-          DoctorProfile,
-          {
-            where: {
-              id: dto.doctorId,
-            },
-          },
-        );
-
-      if (!doctorLocked) {
-        throw new NotFoundException(
-          'Doctor not found',
-        );
-      }
-
-      // =========================================
-      // SCHEDULE
-      // =========================================
-
-      const recurringRepo =
-        qr.manager.getRepository(
-          RecurringAvailability,
-        );
-
-      const customRepo =
-        qr.manager.getRepository(
-          CustomAvailability,
-        );
-
-      const appointmentRepo =
-        qr.manager.getRepository(
-          Appointment,
-        );
-
-      const schedule =
-        await computeDailySchedule(
-          doctorLocked.id,
-          dto.date,
-          recurringRepo,
-          customRepo,
-          appointmentRepo,
-        );
-
-      if (
-        !schedule ||
-        !schedule.availableSlots
-      ) {
-        throw new BadRequestException(
-          'Doctor is unavailable on this date',
-        );
-      }
-
-      const chosen =
-        schedule.availableSlots.find(
-          (s: AvailableSlot) =>
-            s.startTime === dto.startTime &&
-            s.endTime === dto.endTime,
-        );
-
-      // =========================================
-      // SLOT NOT AVAILABLE
-      // =========================================
-
-      if (!chosen) {
-        const nextAvailable =
-          await this.findNextAvailableSlot(
-            dto.doctorId,
-            dto.date,
-            recurringRepo,
-            customRepo,
-            appointmentRepo,
-            dto.startTime,
-          );
-
-        return {
-          unavailable: true,
-          nextAvailable,
-        };
-      }
-
-      // =========================================
-      // CONFLICT CHECK
-      // =========================================
-
-      const conflict =
-        await qr.manager
+        const locked = await qr.manager
           .createQueryBuilder(
             Appointment,
             'appointment',
           )
           .setLock('pessimistic_write')
           .where(
-            'appointment.doctor_id = :doctorId',
-            {
-              doctorId: dto.doctorId,
-            },
-          )
-          .andWhere(
-            'appointment.date = :date',
-            {
-              date: dto.date,
-            },
-          )
-          .andWhere(
-            'appointment.startTime = :startTime',
-            {
-              startTime: dto.startTime,
-            },
-          )
-          .andWhere(
-            'appointment.endTime = :endTime',
-            {
-              endTime: dto.endTime,
-            },
-          )
-          .andWhere(
-            'appointment.status = :status',
-            {
-              status:
-                AppointmentStatus.BOOKED,
-            },
-          )
-          .andWhere(
-            'appointment.id != :id',
-            {
-              id: appt.id,
-            },
+            'appointment.id = :id',
+            { id: appointmentId },
           )
           .getOne();
 
-      // =========================================
-      // WAVE / STREAM LOGIC
-      // =========================================
+        if (!locked) {
+          throw new NotFoundException(
+            'Appointment not found',
+          );
+        }
 
-      let oldRecurring:
-        | RecurringAvailability
-        | null = null;
-
-      let newRecurring:
-        | RecurringAvailability
-        | null = null;
-
-      // OLD RECURRING
-      const oldDay =
-        new Date(appt.date)
-          .toLocaleDateString(
-            'en-US',
+        // Load relations
+        const appt =
+          await qr.manager.findOne(
+            Appointment,
             {
-              weekday: 'long',
-            },
-          )
-          .toUpperCase();
-
-      oldRecurring =
-        await qr.manager
-          .createQueryBuilder(
-            RecurringAvailability,
-            'avail',
-          )
-          .setLock('pessimistic_write')
-          .where(
-            'avail.doctor_id = :doctorId',
-            {
-              doctorId: appt.doctor.id,
-            },
-          )
-          .andWhere(
-            'avail.dayOfWeek = :day',
-            {
-              day: oldDay,
-            },
-          )
-          .andWhere(
-            'avail.startTime <= :startTime',
-            {
-              startTime: appt.startTime,
-            },
-          )
-          .andWhere(
-            'avail.endTime >= :endTime',
-            {
-              endTime: appt.endTime,
-            },
-          )
-          .getOne();
-
-      // NEW RECURRING
-      if (chosen.availabilityId) {
-        newRecurring =
-          await qr.manager
-            .createQueryBuilder(
-              RecurringAvailability,
-              'ra',
-            )
-            .setLock('pessimistic_write')
-            .where(
-              'ra.id = :id',
-              {
-                id: chosen.availabilityId,
+              where: {
+                id: locked.id,
               },
-            )
-            .getOne();
+              relations: [
+                'patient',
+                'patient.user',
+                'doctor',
+              ],
+            },
+          );
 
-        if (!newRecurring) {
-          throw new BadRequestException(
-            'Availability not found',
+        if (!appt) {
+          throw new NotFoundException(
+            'Appointment not found',
           );
         }
 
-        // WAVE
+        // =========================================
+        // VALIDATION
+        // =========================================
+
         if (
-          newRecurring.schedulingType ===
-          SchedulingType.WAVE
+          !appt.patient?.user ||
+          Number(appt.patient.user.id) !==
+          Number(userId)
         ) {
-          if (
-            newRecurring.currentPatients >=
-            (newRecurring.maxPatients ?? 0)
-          ) {
-            const nextAvailable =
-              await this.findNextAvailableSlot(
-                dto.doctorId,
-                dto.date,
-                recurringRepo,
-                customRepo,
-                appointmentRepo,
-                dto.startTime,
-              );
-
-            return {
-              unavailable: true,
-              nextAvailable,
-            };
-          }
-
-          newRecurring.currentPatients =
-            (newRecurring.currentPatients ?? 0) +
-            1;
-
-          await qr.manager.save(
-            newRecurring,
+          throw new BadRequestException(
+            'You can only reschedule your own appointment',
           );
         }
-      }
 
-      // STREAM conflict
-      if (
-        conflict &&
-        newRecurring &&
-        newRecurring.schedulingType ===
-          SchedulingType.STREAM
-      ) {
-        const nextAvailable =
-          await this.findNextAvailableSlot(
-            dto.doctorId,
+        if (
+          appt.status ===
+          AppointmentStatus.CANCELLED
+        ) {
+          throw new BadRequestException(
+            'Cancelled appointment cannot be rescheduled',
+          );
+        }
+
+        const appointmentDateTime =
+          new Date(
+            `${appt.date}T${appt.startTime}:00`,
+          );
+
+        if (
+          appointmentDateTime.getTime() <
+          Date.now()
+        ) {
+          throw new BadRequestException(
+            'Past appointments cannot be rescheduled',
+          );
+        }
+
+        this.validate30MinuteCutoff(
+          appointmentDateTime,
+        );
+
+        const currentStart = appt.startTime.substring(0, 5);
+        const currentEnd = appt.endTime.substring(0, 5);
+
+        if (
+          appt.date === dto.date &&
+          currentStart === dto.startTime &&
+          currentEnd === dto.endTime &&
+          appt.doctor.id === dto.doctorId
+        ) {
+          throw new BadRequestException(
+            'Cannot reschedule to the same slot',
+          );
+        }
+
+        // =========================================
+        // SAVE OLD DETAILS FOR EMAIL
+        // =========================================
+
+        const oldDate = appt.date;
+        const oldStartTime = appt.startTime;
+        const oldEndTime = appt.endTime;
+
+        // =========================================
+        // NEW DATE VALIDATION
+        // =========================================
+
+        const requestedDateTime =
+          new Date(
+            `${dto.date}T${dto.startTime}:00`,
+          );
+
+        if (
+          requestedDateTime.getTime() <=
+          Date.now()
+        ) {
+          throw new BadRequestException(
+            'Requested slot must be in the future',
+          );
+        }
+        const requestedStartMinutes =
+          this.toMinutes(dto.startTime);
+
+        const requestedEndMinutes =
+          this.toMinutes(dto.endTime);
+
+        if (requestedEndMinutes <= requestedStartMinutes) {
+          throw new BadRequestException(
+            'End time must be greater than start time',
+          );
+        }
+
+        // =========================================
+        // DOCTOR
+        // =========================================
+
+        const doctorLocked =
+          await qr.manager.findOne(
+            DoctorProfile,
+            {
+              where: {
+                id: dto.doctorId,
+              },
+            },
+          );
+
+        if (!doctorLocked) {
+          throw new NotFoundException(
+            'Doctor not found',
+          );
+        }
+
+        // =========================================
+        // SCHEDULE
+        // =========================================
+
+        const recurringRepo =
+          qr.manager.getRepository(
+            RecurringAvailability,
+          );
+
+        const customRepo =
+          qr.manager.getRepository(
+            CustomAvailability,
+          );
+
+        const appointmentRepo =
+          qr.manager.getRepository(
+            Appointment,
+          );
+
+        const schedule =
+          await computeDailySchedule(
+            doctorLocked.id,
             dto.date,
             recurringRepo,
             customRepo,
             appointmentRepo,
-            dto.startTime,
           );
 
-        return {
-          unavailable: true,
-          nextAvailable,
-        };
-      }
-
-      // =========================================
-      // RELEASE OLD WAVE SEAT
-      // =========================================
-
-      if (
-        oldRecurring &&
-        oldRecurring.schedulingType ===
-          SchedulingType.WAVE
-      ) {
         if (
-          !newRecurring ||
-          oldRecurring.id !==
-            newRecurring.id
+          !schedule ||
+          !schedule.availableSlots
         ) {
-          oldRecurring.currentPatients =
-            Math.max(
-              0,
-              (oldRecurring.currentPatients ??
-                1) - 1,
-            );
-
-          await qr.manager.save(
-            oldRecurring,
+          throw new BadRequestException(
+            'Doctor is unavailable on this date',
           );
         }
-      }
 
-      // =========================================
-      // UPDATE APPOINTMENT
-      // =========================================
+        const chosen =
+          schedule.availableSlots.find(
+            (s: AvailableSlot) =>
+              s.startTime === dto.startTime &&
+              s.endTime === dto.endTime,
+          );
 
-      appt.doctor = doctorLocked;
-      appt.date = dto.date;
-      appt.startTime = dto.startTime;
-      appt.endTime = dto.endTime;
+        // =========================================
+        // SLOT NOT AVAILABLE
+        // =========================================
 
-      await qr.manager.save(appt);
+        if (!chosen) {
+          const nextAvailable =
+            await this.findNextAvailableSlot(
+              dto.doctorId,
+              dto.date,
+              recurringRepo,
+              customRepo,
+              appointmentRepo,
+              dto.startTime,
+            );
 
-      return {
-        unavailable: false,
-        appointment: appt,
+          return {
+            unavailable: true,
+            nextAvailable,
+          };
+        }
 
-        patientEmail:
-          appt.patient.user.email,
+        // =========================================
+        // CONFLICT CHECK
+        // =========================================
 
-        patientName:
-          appt.patient.fullName,
+        const conflict =
+          await qr.manager
+            .createQueryBuilder(
+              Appointment,
+              'appointment',
+            )
+            .setLock('pessimistic_write')
+            .where(
+              'appointment.doctor_id = :doctorId',
+              {
+                doctorId: dto.doctorId,
+              },
+            )
+            .andWhere(
+              'appointment.date = :date',
+              {
+                date: dto.date,
+              },
+            )
+            .andWhere(
+              'appointment.startTime = :startTime',
+              {
+                startTime: dto.startTime,
+              },
+            )
+            .andWhere(
+              'appointment.endTime = :endTime',
+              {
+                endTime: dto.endTime,
+              },
+            )
+            .andWhere(
+              'appointment.status = :status',
+              {
+                status:
+                  AppointmentStatus.BOOKED,
+              },
+            )
+            .andWhere(
+              'appointment.id != :id',
+              {
+                id: appt.id,
+              },
+            )
+            .getOne();
+        if (conflict) {
+          throw new ConflictException('Slot already booked');
+        }
 
-        doctorName:
-          doctorLocked.fullName,
+        // =========================================
+        // WAVE / STREAM LOGIC
+        // =========================================
 
-        oldDate,
-        oldStartTime,
-        oldEndTime,
+        let oldRecurring:
+          | RecurringAvailability
+          | null = null;
 
-        newDate: appt.date,
-        newStartTime: appt.startTime,
-        newEndTime: appt.endTime,
-      };
-    },
-  );
+        let newRecurring:
+          | RecurringAvailability
+          | null = null;
 
-  // =========================================
-  // SLOT UNAVAILABLE
-  // =========================================
+        // OLD RECURRING
+        const oldDay =
+          new Date(appt.date)
+            .toLocaleDateString(
+              'en-US',
+              {
+                weekday: 'long',
+              },
+            )
+            .toUpperCase();
 
-  if (result.unavailable) {
-  return {
-    message: 'Requested slot unavailable',
-    nextAvailable: result.nextAvailable,
-  };
-}
+        oldRecurring =
+          await qr.manager
+            .createQueryBuilder(
+              RecurringAvailability,
+              'avail',
+            )
+            .setLock('pessimistic_write')
+            .where(
+              'avail.doctor_id = :doctorId',
+              {
+                doctorId: appt.doctor.id,
+              },
+            )
+            .andWhere(
+              'avail.dayOfWeek = :day',
+              {
+                day: oldDay,
+              },
+            )
+            .andWhere(
+              'avail.startTime <= :startTime',
+              {
+                startTime: appt.startTime,
+              },
+            )
+            .andWhere(
+              'avail.endTime >= :endTime',
+              {
+                endTime: appt.endTime,
+              },
+            )
+            .getOne();
 
-if (!result.appointment) {
-  throw new BadRequestException(
-    'Appointment not available after reschedule',
-  );
-}
+        // NEW RECURRING
+        if (chosen.availabilityId) {
+          newRecurring =
+            await qr.manager
+              .createQueryBuilder(
+                RecurringAvailability,
+                'ra',
+              )
+              .setLock('pessimistic_write')
+              .where(
+                'ra.id = :id',
+                {
+                  id: chosen.availabilityId,
+                },
+              )
+              .getOne();
 
-// =========================================
-// SEND RESCHEDULE EMAIL
-// =========================================
+          if (!newRecurring) {
+            throw new BadRequestException(
+              'Availability not found',
+            );
+          }
 
-try {
-  await this.notificationService.sendRescheduleEmail({
-    patientEmail: result.patientEmail ?? '',
-    patientName: result.patientName ?? '',
-    doctorName: result.doctorName ?? '',
+          // WAVE
+          if (
+            newRecurring.schedulingType ===
+            SchedulingType.WAVE
+          ) {
+            if (
+              !oldRecurring ||
+              oldRecurring.id !== newRecurring.id
+            ) {
+              if (
+                newRecurring.currentPatients >=
+                (newRecurring.maxPatients ?? 0)
+              ) {
+                throw new ConflictException(
+                  'Wave is full',
+                );
+              }
 
-    oldDate: result.oldDate ?? '',
-    oldStartTime: result.oldStartTime ?? '',
-    oldEndTime: result.oldEndTime ?? '',
+              newRecurring.currentPatients =
+                (newRecurring.currentPatients ?? 0) + 1;
 
-    newDate: result.newDate ?? '',
-    newStartTime: result.newStartTime ?? '',
-    newEndTime: result.newEndTime ?? '',
-  });
+              await qr.manager.save(newRecurring);
+            }
+          }
+        }
 
-  console.log(
-    '✅ Reschedule email sent successfully',
-  );
-} catch (error) {
-  console.error(
-    '❌ Reschedule email failed, but appointment was rescheduled:',
-    error,
-  );
-}
+        // STREAM conflict
 
-// =========================================
-// CREATE RESCHEDULE NOTIFICATION
-// =========================================
 
-try {
-  await this.notificationService.createAppointmentNotification({
-    patient: result.appointment.patient,
-    appointment: result.appointment,
+        // =========================================
+        // RELEASE OLD WAVE SEAT
+        // =========================================
 
-    type: NotificationType.APPOINTMENT_RESCHEDULED,
+        if (
+          oldRecurring &&
+          oldRecurring.schedulingType ===
+          SchedulingType.WAVE
+        ) {
+          if (
+            !newRecurring ||
+            oldRecurring.id !==
+            newRecurring.id
+          ) {
+            oldRecurring.currentPatients =
+              Math.max(
+                0,
+                (oldRecurring.currentPatients ??
+                  1) - 1,
+              );
 
-    title: 'Appointment Rescheduled',
+            await qr.manager.save(
+              oldRecurring,
+            );
+          }
+        }
 
-    message: `Your appointment with ${result.doctorName} has been rescheduled to ${result.newDate} at ${result.newStartTime}.`,
+        // =========================================
+        // UPDATE APPOINTMENT
+        // =========================================
 
-    eventKey: `appointment-${result.appointment.id}-rescheduled`,
-  });
+        appt.doctor = doctorLocked;
+        appt.date = dto.date;
+        appt.startTime = dto.startTime;
+        appt.endTime = dto.endTime;
+        appt.availabilityId = chosen.availabilityId!;
 
-  console.log(
-    '✅ Reschedule notification created successfully',
-  );
-} catch (error) {
-  console.error(
-    '❌ Reschedule notification creation failed:',
-    error,
-  );
-}
+        await qr.manager.save(appt);
+        return {
+          unavailable: false,
+          appointment: appt,
 
-return {
-  message: 'Appointment rescheduled successfully',
-  appointment: result.appointment,
-};
+          patientEmail:
+            appt.patient.user.email,
 
-  return {
-    message:
-      'Appointment rescheduled successfully',
+          patientName:
+            appt.patient.fullName,
 
-    appointment:
-      result.appointment,
-  };
-}
+          doctorName:
+            doctorLocked.fullName,
+
+          oldDate,
+          oldStartTime,
+          oldEndTime,
+
+          newDate: appt.date,
+          newStartTime: appt.startTime,
+          newEndTime: appt.endTime,
+        };
+      },
+    );
+
+    // =========================================
+    // SLOT UNAVAILABLE
+    // =========================================
+
+    if (result.unavailable) {
+      throw new ConflictException({
+        message: 'Requested slot unavailable',
+        nextAvailable: result.nextAvailable,
+      });
+    }
+    if (!result.appointment) {
+      throw new BadRequestException(
+        'Appointment not available after reschedule',
+      );
+    }
+
+    // =========================================
+    // SEND RESCHEDULE EMAIL
+    // =========================================
+
+    try {
+      await this.notificationService.sendRescheduleEmail({
+        patientEmail: result.patientEmail ?? '',
+        patientName: result.patientName ?? '',
+        doctorName: result.doctorName ?? '',
+
+        oldDate: result.oldDate ?? '',
+        oldStartTime: result.oldStartTime ?? '',
+        oldEndTime: result.oldEndTime ?? '',
+
+        newDate: result.newDate ?? '',
+        newStartTime: result.newStartTime ?? '',
+        newEndTime: result.newEndTime ?? '',
+      });
+
+      console.log(
+        '✅ Reschedule email sent successfully',
+      );
+    } catch (error) {
+      console.error(
+        '❌ Reschedule email failed, but appointment was rescheduled:',
+        error,
+      );
+    }
+
+    // =========================================
+    // CREATE RESCHEDULE NOTIFICATION
+    // =========================================
+
+    try {
+      await this.notificationService.createAppointmentNotification({
+        patient: result.appointment.patient,
+        appointment: result.appointment,
+
+        type: NotificationType.APPOINTMENT_RESCHEDULED,
+
+        title: 'Appointment Rescheduled',
+
+        message: `Your appointment with ${result.doctorName} has been rescheduled to ${result.newDate} at ${result.newStartTime}.`,
+
+        eventKey: `appointment-${result.appointment.id}-rescheduled`,
+      });
+
+      console.log(
+        ' Reschedule notification created successfully',
+      );
+    } catch (error) {
+      console.error(
+        ' Reschedule notification creation failed:',
+        error,
+      );
+    }
+
+    return {
+      message: 'Appointment rescheduled successfully',
+      appointment: result.appointment,
+    };
+
+
+  }
   private async findPatient(userId: number) {
     const patient = await this.patientRepo.findOne({ where: { user: { id: userId } }, relations: ['user'] });
     if (!patient) throw new NotFoundException('Patient not found');
@@ -1101,7 +1085,7 @@ return {
   private async findDoctorAvailability(doctorId: number, date: string, startTime?: string, endTime?: string): Promise<CustomAvailability | RecurringAvailability | null> {
     // Fetch all custom overrides and recurring windows for the date
     const customs = await this.customRepo.find({ where: { doctor: { id: doctorId }, date } });
-    const day = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+    const day = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase() as DayOfWeek;
     const recurrings = await this.availabilityRepo.find({ where: { doctor: { id: doctorId }, dayOfWeek: day } });
 
     if (startTime && endTime) {

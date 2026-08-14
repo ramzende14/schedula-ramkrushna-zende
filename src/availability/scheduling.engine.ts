@@ -1,6 +1,10 @@
 import { Repository } from 'typeorm';
+import { DayOfWeek } from '../availability/enum/day-of-week.enum';
 import { RecurringAvailability } from './entity/recurring-availability.entity';
-import { CustomAvailability } from './entity/custom-availability.entity';
+import {
+  CustomAvailability,
+  CustomAvailabilityType,
+} from './entity/custom-availability.entity';
 import { Appointment, AppointmentStatus } from '../appointment/entity/appointment.entity';
 import { toMinutes, toTime } from '../common/utils/time.util';
 
@@ -25,12 +29,14 @@ type Slot = {
 
 export type AvailableSlot = { startTime: string; endTime: string; status: string; availabilityId?: number | null };
 
-function weekdayFromISODate(date: string): string {
+function weekdayFromISODate(date: string): DayOfWeek {
   const [year, month, day] = date.split('-').map(Number);
   if (!year || !month || !day) {
     throw new Error(`Invalid date format: ${date}`);
   }
-  return new Date(year, month - 1, day).toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+  return new Date(year, month - 1, day)
+    .toLocaleDateString('en-US', { weekday: 'long' })
+    .toUpperCase() as DayOfWeek;
 }
 
 function normalizeTimeValue(time: string): string {
@@ -71,20 +77,38 @@ export async function computeDailySchedule(
     id: c.id,
     startTime: c.startTime,
     endTime: c.endTime,
-    schedulingType: c.schedulingType ?? recurringWindows[0]?.schedulingType ?? 'STREAM',
-    slotDuration: c.slotDuration ?? recurringWindows[0]?.slotDuration,
-    bufferTime: c.bufferTime ?? recurringWindows[0]?.bufferTime ?? 0,
-    maxPatients: c.maxPatients ?? recurringWindows[0]?.maxPatients,
+    schedulingType: c.schedulingType,
+    slotDuration: c.slotDuration,
+    bufferTime: c.bufferTime,
+    maxPatients: c.maxPatients,
     availabilityId: c.id,
   }));
 
-  // Combine all windows (recurring + custom)
-  const allWindows = [...recurringWindows, ...customWindows];
+  const replaceWindows = customs.filter(
+    (c) =>
+      c.type === CustomAvailabilityType.REPLACE &&
+      c.recurringAvailability,
+  );
+
+  const addWindows = customs.filter(
+    (c) => c.type === CustomAvailabilityType.ADD,
+  );
+  const finalRecurringWindows: Window[] =
+    recurringWindows
+      .filter((recurring) => {
+        const replacement = replaceWindows.find(
+          (custom) =>
+            custom.recurringAvailability?.id === recurring.availabilityId,
+        );
+
+        return !replacement;
+      })
+      .map((window) => window);
 
   // Normalize: remove duplicates and sort
   const merged: Window[] = [];
   const seen = new Set<string>();
-  for (const w of allWindows) {
+  for (const w of [...finalRecurringWindows, ...customWindows]) {
     const key = `${w.startTime}-${w.endTime}`;
     if (!seen.has(key)) {
       merged.push(w);
@@ -143,7 +167,18 @@ export async function computeDailySchedule(
   const availableSlots = slots.filter((slot) => {
     const key = buildSlotKey(slot.startTime, slot.endTime);
     const bookedForSlot = bookedCount.get(key) ?? 0;
-    const capacity = slot.maxPatients && slot.maxPatients > 0 ? slot.maxPatients : 1;
+
+    // STREAM = one patient per slot
+    if (slot.schedulingType === 'STREAM') {
+      return bookedForSlot === 0;
+    }
+
+    // WAVE = multiple patients allowed up to maxPatients
+    const capacity =
+      slot.maxPatients && slot.maxPatients > 0
+        ? slot.maxPatients
+        : 1;
+
     return bookedForSlot < capacity;
   });
 
@@ -212,10 +247,10 @@ export async function findNearestSlotBeforeShrink(
 
   return found
     ? {
-        date: schedule.date,
-        startTime: found.startTime,
-        endTime: found.endTime,
-      }
+      date: schedule.date,
+      startTime: found.startTime,
+      endTime: found.endTime,
+    }
     : null;
 }
 
@@ -332,7 +367,7 @@ export async function findShrinkAlternatives(
 
         const capacity =
           nextSession.maxPatients &&
-          nextSession.maxPatients > 0
+            nextSession.maxPatients > 0
             ? nextSession.maxPatients
             : 1;
 
