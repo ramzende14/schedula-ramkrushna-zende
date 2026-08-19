@@ -1,16 +1,23 @@
-import { IsNumber, IsString } from 'class-validator';
+import {
+  IsInt,
+  IsDateString,
+  IsNotEmpty,
+  Matches,
+} from 'class-validator';
 
 export class RescheduleAppointmentDto {
 
-  @IsNumber()
+  @IsInt()
   doctorId!: number;
 
-  @IsString()
+  @IsDateString()
   date!: string;
 
-  @IsString()
+  @IsNotEmpty()
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
   startTime!: string;
 
-  @IsString()
+  @IsNotEmpty()
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/)
   endTime!: string;
 }

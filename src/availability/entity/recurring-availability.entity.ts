@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { DoctorProfile } from '../../doctor/entity/doctor-profile.entity';
+import { DayOfWeek } from '../enum/day-of-week.enum';
 
 export enum SchedulingType {
   STREAM = 'STREAM',
@@ -23,8 +24,11 @@ export class RecurringAvailability {
   @JoinColumn({ name: 'doctor_id' })
   doctor!: DoctorProfile;
 
-  @Column()
-  dayOfWeek!: string;
+  @Column({
+    type: 'enum',
+    enum: DayOfWeek,
+  })
+  dayOfWeek!: DayOfWeek;
 
   @Column({ type: 'time' })
   startTime!: string;
@@ -35,22 +39,33 @@ export class RecurringAvailability {
   @Column({
     type: 'enum',
     enum: SchedulingType,
-    default: SchedulingType.STREAM,
   })
   schedulingType!: SchedulingType;
 
-  @Column({ nullable: true })
-  slotDuration?: number;
+  @Column({ type: 'int' })
+  slotDuration!: number;
 
-  @Column({ default: 0 })
+  @Column({
+    type: 'int',
+    default: 0,
+  })
   bufferTime!: number;
 
-  @Column({ default: 0 })
-  currentPatients!: number;
+  @Column({
+    type: 'int',
+    default: 1,
+  })
+  maxPatients!: number;
 
   @CreateDateColumn()
   createdAt!: Date;
 
-  @Column({ nullable: true })
-  maxPatients?: number;
+  @UpdateDateColumn()
+  updatedAt!: Date;
+
+  @Column({
+  type: 'int',
+  default: 0,
+})
+currentPatients!: number;
 }

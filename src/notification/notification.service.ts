@@ -10,6 +10,7 @@ import {
   Notification,
   NotificationType,
 } from './notification.entity';
+import { SchedulingType } from '../availability/enum/scheduling-type.enum';
 
 @Injectable()
 export class NotificationService {
@@ -631,5 +632,230 @@ async getPatientNotifications(userId: number) {
       createdAt: 'DESC',
     },
   });
+}
+async sendReminderEmail(data: {
+  patientEmail: string;
+  patientName: string;
+  doctorName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  schedulingType: SchedulingType;
+  tokenNumber: number | null;
+}) {
+
+  const isWave =
+    data.schedulingType === SchedulingType.WAVE;
+
+  const appointmentInfo = isWave
+    ? `
+      <div style="
+        background:#eff6ff;
+        border:1px solid #bfdbfe;
+        border-radius:12px;
+        padding:22px;
+        margin:25px 0;
+      ">
+
+        <p style="
+          margin:0 0 15px;
+          color:#2563eb;
+          font-size:12px;
+          font-weight:bold;
+          letter-spacing:1px;
+        ">
+          WAVE APPOINTMENT
+        </p>
+
+        <p style="
+          margin:8px 0;
+          color:#334155;
+          font-size:14px;
+        ">
+          <strong>Doctor:</strong>
+          ${data.doctorName}
+        </p>
+
+        <p style="
+          margin:8px 0;
+          color:#334155;
+          font-size:14px;
+        ">
+          <strong>Reporting Time:</strong>
+          ${data.startTime}
+        </p>
+
+        <div style="
+          background:#2563eb;
+          border-radius:10px;
+          padding:18px;
+          margin-top:18px;
+          text-align:center;
+        ">
+
+          <p style="
+            margin:0 0 5px;
+            color:#dbeafe;
+            font-size:12px;
+            font-weight:bold;
+            text-transform:uppercase;
+          ">
+            Your Token Number
+          </p>
+
+          <p style="
+            margin:0;
+            color:#ffffff;
+            font-size:36px;
+            font-weight:bold;
+          ">
+            ${data.tokenNumber}
+          </p>
+
+        </div>
+
+      </div>
+    `
+    : `
+      <div style="
+        background:#f0fdf4;
+        border:1px solid #bbf7d0;
+        border-radius:12px;
+        padding:22px;
+        margin:25px 0;
+      ">
+
+        <p style="
+          margin:0 0 15px;
+          color:#15803d;
+          font-size:12px;
+          font-weight:bold;
+          letter-spacing:1px;
+        ">
+          STREAM APPOINTMENT
+        </p>
+
+        <p style="
+          margin:8px 0;
+          color:#334155;
+          font-size:14px;
+        ">
+          <strong>Doctor:</strong>
+          ${data.doctorName}
+        </p>
+
+        <p style="
+          margin:8px 0;
+          color:#334155;
+          font-size:14px;
+        ">
+          <strong>Date:</strong>
+          ${data.date}
+        </p>
+
+        <p style="
+          margin:8px 0;
+          color:#334155;
+          font-size:14px;
+        ">
+          <strong>Appointment Time:</strong>
+          ${data.startTime} - ${data.endTime}
+        </p>
+
+      </div>
+    `;
+
+  const content = `
+    <div style="text-align:center;">
+
+      <div style="
+        display:inline-block;
+        background:#fef3c7;
+        color:#92400e;
+        padding:8px 16px;
+        border-radius:20px;
+        font-size:12px;
+        font-weight:bold;
+        letter-spacing:.5px;
+      ">
+        APPOINTMENT REMINDER
+      </div>
+
+      <h1 style="
+        margin:20px 0 10px;
+        color:#0f172a;
+        font-size:26px;
+      ">
+        Your Appointment Is Coming Up
+      </h1>
+
+    </div>
+
+    <p style="
+      color:#334155;
+      font-size:15px;
+      line-height:1.7;
+    ">
+      Hello <strong>${data.patientName}</strong>,
+    </p>
+
+    <p style="
+      color:#64748b;
+      font-size:14px;
+      line-height:1.7;
+    ">
+      This is a friendly reminder that you have an upcoming
+      appointment with <strong>${data.doctorName}</strong>.
+      Please review the details below.
+    </p>
+
+    ${appointmentInfo}
+
+    <div style="
+      background:#f8fafc;
+      border-left:4px solid #2563eb;
+      padding:15px 18px;
+      margin:25px 0;
+    ">
+
+      <p style="
+        margin:0;
+        color:#475569;
+        font-size:13px;
+        line-height:1.6;
+      ">
+        Please arrive / be ready a few minutes before your
+        scheduled appointment time to ensure a smooth
+        consultation.
+      </p>
+
+    </div>
+
+    <p style="
+      color:#64748b;
+      font-size:13px;
+      line-height:1.6;
+    ">
+      If you are unable to attend your appointment, please
+      cancel or reschedule it through HospitalMS in advance.
+    </p>
+
+    <p style="
+      margin-top:28px;
+      color:#334155;
+      font-size:14px;
+    ">
+      Thank you for choosing <strong>HospitalMS</strong>.
+    </p>
+  `;
+
+  await this.emailService.sendEmail(
+    data.patientEmail,
+    'Appointment Reminder | HospitalMS',
+    emailLayout(
+      'Appointment Reminder',
+      content,
+    ),
+  );
 }
 }

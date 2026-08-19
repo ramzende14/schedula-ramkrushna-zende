@@ -1,10 +1,16 @@
 import {
   IsDateString,
+  IsInt,
   IsNotEmpty,
   Matches,
+  Min,
 } from 'class-validator';
 
 export class ExpandAvailabilityDto {
+  @IsInt()
+  @Min(1)
+  availabilityId!: number;
+
   @IsDateString()
   date!: string;
 

@@ -7,8 +7,18 @@ import {
   UpdateDateColumn,
   JoinColumn,
 } from 'typeorm';
+
 import { DoctorProfile } from '../../doctor/entity/doctor-profile.entity';
-import { SchedulingType } from './recurring-availability.entity';
+import {
+  RecurringAvailability,
+  SchedulingType,
+} from './recurring-availability.entity';
+
+export enum CustomAvailabilityType {
+  ADD = 'ADD',
+  REPLACE = 'REPLACE',
+  SHRINK = 'SHRINK',
+}
 
 @Entity('custom_availability')
 export class CustomAvailability {
@@ -18,6 +28,16 @@ export class CustomAvailability {
   @ManyToOne(() => DoctorProfile, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'doctor_id' })
   doctor!: DoctorProfile;
+
+  @ManyToOne(
+    () => RecurringAvailability,
+    {
+      nullable: true,
+      onDelete: 'SET NULL',
+    },
+  )
+  @JoinColumn({ name: 'recurring_availability_id' })
+  recurringAvailability?: RecurringAvailability | null;
 
   @Column({ type: 'date' })
   date!: string;
@@ -31,19 +51,30 @@ export class CustomAvailability {
   @Column({
     type: 'enum',
     enum: SchedulingType,
-    nullable: true,
-    default: null,
   })
-  schedulingType?: SchedulingType | null;
+  schedulingType!: SchedulingType;
 
-  @Column({ type: 'int', nullable: true })
-  slotDuration?: number | null;
+  @Column({ type: 'int' })
+  slotDuration!: number;
 
-  @Column({ type: 'int', nullable: true, default: 0 })
-  bufferTime?: number | null;
+  @Column({
+    type: 'int',
+    default: 0,
+  })
+  bufferTime!: number;
 
-  @Column({ type: 'int', nullable: true })
-  maxPatients?: number | null;
+  @Column({
+    type: 'int',
+    default: 1,
+  })
+  maxPatients!: number;
+
+  @Column({
+    type: 'enum',
+    enum: CustomAvailabilityType,
+    default: CustomAvailabilityType.ADD,
+  })
+  type!: CustomAvailabilityType;
 
   @CreateDateColumn()
   createdAt!: Date;
